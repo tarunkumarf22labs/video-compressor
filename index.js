@@ -1,18 +1,21 @@
-const express = require('express');
-const ffmpeg = require('fluent-ffmpeg');https://github.com/tarunkumarf22labs/shopclipscsvconverter
-const multer = require('multer');
-const cors = require('cors');
-const path = require('path');
-const fs =  require("fs")
+const express = require("express");
+const ffmpeg = require("fluent-ffmpeg");
+const multer = require("multer");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.port || 4000;
+
+const { uploadToS3 } = require("./s3_storage/aws.s3.storage");
 
 // Enable CORS to allow cross-origin requests (adjust origins as needed)
 app.use(cors());
+app.use(express.json());
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
     cb(null, file.originalname);
@@ -21,36 +24,70 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+app.get("/file", (req, res) => {
+  res.send("working")
+  
 });
 
-app.post('/upload', upload.array('videos', 10), (req, res) => {
-  const files = req.files;
-  const outputDir = 'compressed_videos';
 
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir);
+app.post("/upload", upload.array("videos", 10), async (req, res) => {
+  try {
+    // Start measuring the time
+    console.time("Code Execution Time");
+    const files = req.files;
+    const outputDir = "compressed_videos";
+
+    if (!fs.existsSync(outputDir)) {
+      // directory doesn't exist
+      fs.mkdirSync(outputDir);
+    }
+
+    // Promisify ffmpeg  compression
+    const ffmpegPromise = (inputPath, outputPath) => {
+      return new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .videoCodec("libx264")
+          .audioCodec("aac")
+          .outputOptions(["-movflags", "faststart"])
+          .on("end", () => {
+            console.log(`Compressed: ${path.basename(outputPath)}`);
+            resolve(outputPath);
+          })
+          .on("error", (err) => {
+            console.error(
+              `Error compressing ${path.basename(outputPath)}: ${err.message}`
+            );
+            reject(err);
+          })
+          .save(outputPath);
+      });
+    };
+
+    // Using async/await to upload to S3
+    for (const file of files) {
+      const inputPath = path.join(__dirname, "uploads", file.originalname);
+      const outputPath = path.join(__dirname, outputDir, file.originalname);
+
+      await ffmpegPromise(inputPath, outputPath);
+
+      // Read the compressed video file
+      const fileData = fs.readFileSync(outputPath);
+      let result = await uploadToS3(fileData, file);
+      if (result) {
+        // Remove the local compressed video file
+        fs.unlinkSync(inputPath);
+        fs.unlinkSync(outputPath);   
+        // End measuring the time
+        console.timeEnd("Code Execution Time");
+        return res.send(result);
+      }
+    }
+  } catch (error) {
+    console.log("Error:", error);
+    res
+      .status(500)
+      .send("An error occurred during video processing and upload", error);
   }
-
-  files.forEach((file) => {
-    const inputPath = path.join(__dirname, 'uploads', file.originalname);
-    const outputPath = path.join(__dirname, outputDir, file.originalname);
-
-    ffmpeg(inputPath)
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .outputOptions(['-movflags', 'faststart'])
-      .on('end', () => {
-        console.log(`Compressed: ${file.originalname}`);
-      })
-      .on('error', (err) => {
-        console.error(`Error compressing ${file.originalname}: ${err.message}`);
-      })
-      .save(outputPath);
-  });
-
-  res.send('Video compression in progress');
 });
 
 app.listen(port, () => {
