@@ -68,6 +68,7 @@ app.post("/upload", upload.array("videos", 10), async (req, res) => {
           await ffmpegPromise(inputPath, outputPath);
           // Read the compressed video file
           const fileData = fs.readFileSync(outputPath);
+          console.log("fileData :::", fileData);
           let result = await uploadToS3(fileData, file);
           if (result) {
             // Remove the local compressed video file
