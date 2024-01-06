@@ -33,12 +33,14 @@ app.post("/upload", upload.array("videos", 10), async (req, res) => {
     const files = req.files;
     const outputDir = "compressed_videos";
     if (files && files.length > 0) {
+      console.log("files::", files)
       if (!fs.existsSync(outputDir)) {
         // directory doesn't exist
         fs.mkdirSync(outputDir);
       }
       // Promisify ffmpeg  compression
       const ffmpegPromise = (inputPath, outputPath) => {
+        console.log("ffmpeg::", inputPath,outputPath)
         return new Promise((resolve, reject) => {
           ffmpeg(inputPath)
             .videoCodec("libx264")
