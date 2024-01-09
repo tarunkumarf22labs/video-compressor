@@ -32,15 +32,16 @@ app.post("/upload", upload.array("videos", 10), async (req, res) => {
   try {
     const files = req.files;
     const outputDir = "compressed_videos";
+    const uploadedFiles = [];
     if (files && files.length > 0) {
-      console.log("files::", files)
+      console.log("files::", files);
       if (!fs.existsSync(outputDir)) {
         // directory doesn't exist
         fs.mkdirSync(outputDir);
       }
       // Promisify ffmpeg  compression
       const ffmpegPromise = (inputPath, outputPath) => {
-        console.log("ffmpeg::", inputPath,outputPath)
+        console.log("ffmpeg::", inputPath, outputPath);
         return new Promise((resolve, reject) => {
           ffmpeg(inputPath)
             .videoCodec("libx264")
@@ -73,15 +74,22 @@ app.post("/upload", upload.array("videos", 10), async (req, res) => {
           console.log("fileData :::", fileData);
           let result = await uploadToS3(fileData, file);
           if (result) {
+            uploadedFiles.push(result);
             // Remove the local compressed video file
             fs.unlinkSync(outputPath);
             fs.unlinkSync(inputPath);
 
-            return res.status(200).send(result);
+            // return res.status(200).send(result);
           }
         } else {
           return res.status(200).send("Path is not created");
         }
+      }
+      console.log("uploadedFiles", uploadedFiles);
+      if (uploadedFiles.length > 0) {
+        return res.status(200).json(uploadedFiles);
+      } else {
+        return res.status(200).send("No files uploaded or processed.");
       }
     } else {
       return res.status(200).send("File is not in correct format");
